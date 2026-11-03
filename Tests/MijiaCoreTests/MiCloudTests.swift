@@ -897,6 +897,22 @@ actor StubMiCloudAPI: MiCloudAPI {
 
     func setGetPropsFailure(_ failure: MiCloudError?) { getPropsFailure = failure }
 
+    /// Group did → member dids the stub answers with; refreshed tests mutate this between polls.
+    var groupMembers: [String: [String]] = [:]
+    private(set) var groupMemberCalls: [[String]] = []
+    private var groupMembersFailure: MiCloudError?
+
+    func setGroupMembers(_ members: [String: [String]], failure: MiCloudError? = nil) {
+        groupMembers = members
+        groupMembersFailure = failure
+    }
+
+    func lightGroupMembers(groupDids: [String]) async throws -> [String: [String]] {
+        groupMemberCalls.append(groupDids)
+        if let groupMembersFailure { throw groupMembersFailure }
+        return groupMembers.filter { groupDids.contains($0.key) }
+    }
+
     func setGetPropsHook(_ hook: (@Sendable () async -> Void)?) {
         getPropsHook = hook
     }
@@ -1401,6 +1417,65 @@ struct MiCloudProviderTests {
         ])
         await provider.shutdown()
     }
+
+    @Test("Member→group owners only cover cards in this home, first listed group wins")
+    func groupOwnerMapping() {
+        let devices = [
+            MiDeviceRecord(did: "group.a", name: "灯组 A", model: "yeelink.light.ceiling22", isOnline: true),
+            MiDeviceRecord(did: "group.b", name: "灯组 B", model: "yeelink.light.ceiling22", isOnline: true),
+            MiDeviceRecord(did: "123", name: "灯 1", model: "yeelink.light.ceiling22", isOnline: true),
+            MiDeviceRecord(did: "456", name: "灯 2", model: "yeelink.light.ceiling22", isOnline: true),
+        ]
+        let owners = MiCloudProvider.deviceGroupOwners(
+            membersByGroup: [
+                "group.a": ["123", "456", "not-listed"],
+                "group.b": ["456", "789"],
+                "group.gone": ["123"],
+            ],
+            devices: devices
+        )
+        #expect(owners == ["123": "group.a", "456": "group.a"])
+    }
+
+    @Test("Group membership is refreshed with the device list and follows membership changes")
+    func groupMembershipRefresh() async throws {
+        let group = MiDeviceRecord(did: "group.1", name: "客厅灯组", model: "yeelink.light.ceiling22", isOnline: true)
+        let first = MiDeviceRecord(did: "123", name: "吸顶灯", model: "yeelink.light.ceiling22", isOnline: true)
+        let second = MiDeviceRecord(did: "456", name: "落地灯", model: "yeelink.light.ceiling22", isOnline: true)
+        let api = StubMiCloudAPI(
+            devices: [group, first, second],
+            rooms: [],
+            values: [
+                MiotFixtures.key("group.1", 2, 1): .bool(true),
+                MiotFixtures.key("123", 2, 1): .bool(true),
+                MiotFixtures.key("456", 2, 1): .bool(true),
+            ]
+        )
+        await api.setGroupMembers(["group.1": ["123"]])
+        let provider = MiCloudProvider(
+            sessionLoader: { fakeSession },
+            apiFactory: { _ in api },
+            specSource: StubSpecSource(),
+            pollInterval: .seconds(60),
+            selectedHomeLoader: { nil }
+        )
+        let (log, task) = consume(provider)
+        defer { task.cancel() }
+
+        #expect(await log.wait { await $0.snapshots.last?.lightGroupOwners == ["123": "group.1"] })
+        #expect(await api.groupMemberCalls == [["group.1"]])
+
+        await api.setGroupMembers(["group.1": ["456"]])
+        await provider.refreshNow()
+        #expect(await log.wait { await $0.snapshots.last?.lightGroupOwners == ["456": "group.1"] })
+        #expect(await api.groupMemberCalls == [["group.1"], ["group.1"]])
+
+        // A failed lookup clears the cache instead of hiding lights through stale membership.
+        await api.setGroupMembers(["group.1": ["123"]], failure: .http(500))
+        await provider.refreshNow()
+        #expect(await log.wait { await $0.snapshots.last?.lightGroupOwners.isEmpty == true })
+        await provider.shutdown()
+    }
 }
 
 struct MiCloudClientTests {
@@ -1427,6 +1502,55 @@ struct MiCloudClientTests {
         let client = MiCloudClient(session: fakeSession, transport: transport)
         let values = try await client.getProps([MiotFixtures.key("123", 2, 1)])
         #expect(values == [MiotFixtures.key("123", 2, 1): .bool(true)])
+    }
+
+    @Test("Light-group membership sends one group_did array and parses both membership spellings")
+    func lightGroupMembershipRequest() async throws {
+        let transport = ScriptedTransport { req in
+            let form = String(data: req.httpBody ?? Data(), encoding: .utf8) ?? ""
+            var fields: [String: String] = [:]
+            for pair in form.split(separator: "&") {
+                let kv = pair.split(separator: "=", maxSplits: 1).map { String($0).removingPercentEncoding ?? "" }
+                if kv.count == 2 { fields[kv[0]] = kv[1] }
+            }
+            let signed = try MiCloudCrypto.signedNonce(ssecurity: Vectors.ssecurity, nonce: fields["_nonce"] ?? "")
+            let data = String(data: try MiCloudCrypto.decryptResponse(fields["data"] ?? "", signedNonce: signed), encoding: .utf8) ?? ""
+            guard req.url?.absoluteString == "https://api.io.mi.com/app/v2/groupv2/query_status",
+                  data == #"{"group_did":["group.1","group.2"]}"# else {
+                return (400, [:], #"{"code":-1,"message":"bad request in stub"}"#)
+            }
+            let reply = #"{"code":0,"message":"ok","result":[{"group_did":"group.1","status":"1","member_ship":{"123":"1","456":"1"}},{"group_did":"group.2","status":"1","membership":{"789":"1"}}]}"#
+            return (200, [:], try MiCloudCrypto.encrypt(reply, signedNonce: signed))
+        }
+        let client = MiCloudClient(session: fakeSession, transport: transport)
+        // Non-group dids and repeats never reach the request.
+        let members = try await client.lightGroupMembers(groupDids: ["group.1", "123", "group.2", "group.1"])
+        #expect(Set(members.keys) == ["group.1", "group.2"])
+        #expect(Set(members["group.1"] ?? []) == ["123", "456"])
+        #expect(members["group.2"] == ["789"])
+    }
+
+    @Test("Light-group parser accepts member_ship, membership, and skips malformed rows")
+    func lightGroupMembershipParsing() throws {
+        let json = try JSONDecoder().decode(JSONValue.self, from: Data(#"""
+        [{"group_did":"group.1","status":"1","member_ship":{"1":"1","2":"1"}},
+         {"group_did":"group.2","status":"1","membership":{"3":"1"}},
+         {"group_did":"group.3","status":"1","member_ship":"garbage","membership":{"4":"1"}},
+         {"group_did":"group.4","status":"1"},
+         {"group_did":"group.5","member_ship":{"5":"1"},"membership":{"6":"1"}},
+         {"group_did":"group.1","status":"1","member_ship":{"7":"1"}},
+         {"status":"1","member_ship":{"8":"1"}},
+         {"group_did":"group.6","member_ship":null,"membership":{"":"1"}},
+         "not a row"]
+        """#.utf8))
+        let members = MiCloudClient.parseLightGroupMembers(json)
+        #expect(Set(members.keys) == ["group.1", "group.2", "group.3", "group.5", "group.6"])
+        #expect(members["group.1"]?.sorted() == ["1", "2", "7"])
+        #expect(members["group.2"] == ["3"])
+        #expect(members["group.3"] == ["4"])
+        #expect(members["group.5"] == ["5"])
+        #expect(members["group.6"] == [])
+        #expect(MiCloudClient.parseLightGroupMembers(.object([:])).isEmpty)
     }
 
     @Test("Room list parsing flattens homelist.roomlist")

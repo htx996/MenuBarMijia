@@ -219,6 +219,9 @@ public struct SynthesizedHome: Equatable, Sendable {
     public var deviceBackends: [String: HomeBackend] = [:]
     /// Cards that matched one physical device in both sources; only these offer a source pin.
     public var pairedDeviceIDs: Set<String> = []
+    /// Member did → owning Mi light-group did (`v2/groupv2/query_status`). Empty on backends
+    /// without light groups; the panel only folds members whose group card is on screen (#189).
+    public var lightGroupOwners: [String: String] = [:]
     /// Sources that contributed this merged snapshot.
     public var activeBackends: Set<HomeBackend> = []
     /// Per-source connection state for the bottom dual-source summary. Empty on single-source.

@@ -187,6 +187,8 @@ public enum DeviceDeduplicator {
         var routes: [String: DeviceMergeRoute] = [:]
         var deviceBackends: [String: HomeBackend] = [:]
         var pairedDeviceIDs: Set<String> = []
+        /// Mi source did → the card id it merges into, so group ownership survives pairing with HA.
+        var miCanonicalIDs: [String: String] = [:]
 
         for card in cards {
             var card = card
@@ -219,6 +221,9 @@ public enum DeviceDeduplicator {
                 card.winner = pinnedCandidate
             }
             if wasPaired { pairedDeviceIDs.insert(canonicalID) }
+            for candidate in [card.winner, card.other].compactMap({ $0 }) where candidate.backend == .xiaomiCloud {
+                miCanonicalIDs[candidate.device.id] = canonicalID
+            }
 
             var merged = mergedDevice(for: card)
             let roomKey = DeviceIdentityNormalizer.normalizedRoomName(merged.roomName)
@@ -286,6 +291,16 @@ public enum DeviceDeduplicator {
         home.activeBackends = activeBackends
         home.deviceBackends = deviceBackends
         home.pairedDeviceIDs = pairedDeviceIDs
+        let mergedIDs = Set(mergedDevices.map(\.id))
+        // Ownership arrives keyed by Mi source dids. A member or group paired with an HA card is
+        // shown under the canonical id, so translate both endpoints before keeping the pair (#189).
+        home.lightGroupOwners = (xiaomiCloud?.lightGroupOwners ?? [:]).reduce(into: [:]) { owners, entry in
+            guard let memberID = miCanonicalIDs[entry.key],
+                  let groupID = miCanonicalIDs[entry.value],
+                  mergedIDs.contains(memberID),
+                  mergedIDs.contains(groupID) else { return }
+            owners[memberID] = groupID
+        }
 
         return DeviceMergeResult(
             home: home,

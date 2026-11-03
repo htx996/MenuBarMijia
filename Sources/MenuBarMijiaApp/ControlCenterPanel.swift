@@ -361,7 +361,7 @@ public struct ControlCenterPanel: View {
                     VStack(alignment: .leading, spacing: 11) {
                         if search.isSearching {
                             searchResultsList(results: searchResults)
-                        } else if store.filteredDevices.isEmpty {
+                        } else if store.visibleDevices.isEmpty {
                             emptyStateView
                         } else {
                             ForEach(sections) { section in
@@ -740,7 +740,7 @@ public struct ControlCenterPanel: View {
             }
             pool = store.nonFavoriteDevices
         } else {
-            pool = store.filteredDevices
+            pool = store.visibleDevices
         }
         for group in groups {
             let members = DeviceLayoutPrefs.apply(order: order, to: pool.filter { map[$0.id] == group.id })

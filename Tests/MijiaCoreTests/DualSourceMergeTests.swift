@@ -126,6 +126,71 @@ struct DualSourceMergeTests {
         #expect(result.canonical.canonicalID(forKeys: ["pair:ha-living-light|123456789"]) == "ha-living-light")
     }
 
+    @Test("Light-group ownership follows canonical ids when both endpoints pair with HA")
+    func lightGroupOwnersFollowCanonicalIDs() throws {
+        let haGroup = makeLight(id: "ha-living-group", name: "客厅灯组", roomId: "living_room", roomName: "客厅")
+        let miGroup = makeLight(
+            id: "group.123",
+            name: "客厅灯组",
+            roomId: "mi_room_1",
+            roomName: "客厅",
+            model: "xiaomi.light"
+        )
+        let haMember = makeLight(id: "ha-living-ceiling", name: "客厅吸顶灯", roomId: "living_room", roomName: "客厅")
+        let miMember = makeLight(
+            id: "456789012",
+            name: "客厅吸顶灯",
+            roomId: "mi_room_1",
+            roomName: "客厅",
+            model: "xiaomi.light"
+        )
+        let haGroupIdentity = makeIdentity(
+            dids: DeviceIdentityNormalizer.didCandidates(from: ["xiaomi_home_group.123"]),
+            model: haGroup.model,
+            name: haGroup.name,
+            roomName: haGroup.roomName,
+            kind: .light
+        )
+        let miGroupIdentity = makeIdentity(
+            dids: ["group.123"],
+            model: miGroup.model,
+            name: miGroup.name,
+            roomName: miGroup.roomName,
+            kind: .light
+        )
+        let haMemberIdentity = makeIdentity(
+            dids: DeviceIdentityNormalizer.didCandidates(from: ["xiaomi_home_456789012"]),
+            model: haMember.model,
+            name: haMember.name,
+            roomName: haMember.roomName,
+            kind: .light
+        )
+        let miMemberIdentity = makeIdentity(
+            dids: ["456789012"],
+            model: miMember.model,
+            name: miMember.name,
+            roomName: miMember.roomName,
+            kind: .light
+        )
+
+        var miHome = makeHome(
+            devices: [miGroup, miMember],
+            identities: [miGroup.id: miGroupIdentity, miMember.id: miMemberIdentity]
+        )
+        miHome.lightGroupOwners = ["456789012": "group.123"]
+
+        let result = DeviceDeduplicator.merge(
+            homeAssistant: makeHome(
+                devices: [haGroup, haMember],
+                identities: [haGroup.id: haGroupIdentity, haMember.id: haMemberIdentity]
+            ),
+            xiaomiCloud: miHome
+        )
+
+        #expect(result.home.devices.map(\.id).sorted() == ["ha-living-ceiling", "ha-living-group"])
+        #expect(result.home.lightGroupOwners == ["ha-living-ceiling": "ha-living-group"])
+    }
+
     @Test("A normalized MAC address pairs devices that have no did")
     func macPairingDedupesDevicesWithoutDID() throws {
         let haLight = makeLight(id: "ha-desk-light", name: "书桌灯", roomId: "study", roomName: "书房")

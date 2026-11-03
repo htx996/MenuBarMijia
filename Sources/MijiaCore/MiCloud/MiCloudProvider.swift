@@ -34,6 +34,8 @@ public actor MiCloudProvider: HomeProvider {
 
     private var devices: [MiDeviceRecord] = []
     private var rooms: [MiRoom] = []
+    /// Light-group did → member dids, refreshed with the device list (#189).
+    private var groupMembersByGroup: [String: [String]] = [:]
     private var specsByModel: [String: MiotDeviceSpec] = [:]
     private var values: [MiotPropKey: JSONValue] = [:]
     /// Lights whose `mode` write the cloud rejected as unsupported; their scene chips are hidden.
@@ -288,6 +290,7 @@ public actor MiCloudProvider: HomeProvider {
             }
         }
         devices = list
+        try await refreshGroupMembers(api)
         await loadMissingSpecs()
 
         var unsupported: Set<String> = []
@@ -304,6 +307,43 @@ public actor MiCloudProvider: HomeProvider {
         if !unsupported.isEmpty {
             logger.notice("Unsupported models (skipped): \(unsupported.sorted().joined(separator: ", "), privacy: .public)")
         }
+    }
+
+    /// Fetches light-group membership for the listed `group.*` cards so the panel can fold their
+    /// member lights into one card (#189). A failed lookup clears the cache: showing a member
+    /// twice beats hiding a light whose group query went stale.
+    private func refreshGroupMembers(_ api: any MiCloudAPI) async throws {
+        var seen: Set<String> = []
+        let groupDids = devices.map(\.did).filter { $0.hasPrefix("group.") && seen.insert($0).inserted }
+        guard !groupDids.isEmpty else {
+            groupMembersByGroup = [:]
+            return
+        }
+        do {
+            groupMembersByGroup = try await api.lightGroupMembers(groupDids: groupDids)
+        } catch MiCloudError.sessionExpired {
+            throw MiCloudError.sessionExpired
+        } catch {
+            groupMembersByGroup = [:]
+            logger.error("Light-group member lookup failed: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Member did → owning group did for cards in `devices`, in device-list order. Members or groups
+    /// outside this home are omitted, so switching homes cannot hide a light through a stale group.
+    static func deviceGroupOwners(
+        membersByGroup: [String: [String]],
+        devices: [MiDeviceRecord]
+    ) -> [String: String] {
+        let listed = Set(devices.map(\.did))
+        var owners: [String: String] = [:]
+        for device in devices {
+            guard device.did.hasPrefix("group."), let memberDids = membersByGroup[device.did] else { continue }
+            for did in memberDids where listed.contains(did) && owners[did] == nil {
+                owners[did] = device.did
+            }
+        }
+        return owners
     }
 
     private struct SpecLoadOutcome: Sendable {
@@ -432,6 +472,7 @@ public actor MiCloudProvider: HomeProvider {
         var home = MiotSynthesizer.synthesize(devices: visibleDevices, rooms: visibleRooms, specs: specsByModel, values: values)
         home.closesAwayGap = closesAwayGap
         home.homes = Self.homeOptions(from: rooms)
+        home.lightGroupOwners = Self.deviceGroupOwners(membersByGroup: groupMembersByGroup, devices: visibleDevices)
         // Light groups advertise `mode` but their members reject it; hide scenes there too.
         for i in home.devices.indices {
             guard case .light(var spec) = home.devices[i].kind,

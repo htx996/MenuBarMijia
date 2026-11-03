@@ -297,6 +297,22 @@ private struct GeneralSettingsTab: View {
                     )
 
                     SettingsToggleRow(
+                        title: L10n.tr("灯组内的单灯不重复显示", "Hide individual lights inside groups"),
+                        isOn: Binding(
+                            get: { store.hideGroupedLights },
+                            set: { store.hideGroupedLights = $0 }
+                        )
+                    )
+
+                    Text(L10n.tr(
+                        "开启后，米家灯组的成员灯会折叠进灯组卡片；灯组卡片被隐藏、离线或被筛掉时，成员单灯仍会显示。全关、场景、搜索与助手仍按完整设备集合计算。默认开启。",
+                        "When on, member lights fold into their Mi light-group card. If that card is hidden, offline or filtered out, the member lights stay visible. All Off, scenes, search and the assistant still use the full device set. On by default."
+                    ))
+                    .font(.system(size: DesignTokens.TypeSize.caption))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                    SettingsToggleRow(
                         title: L10n.tr("显示顶部快捷场景栏", "Show Quick Actions Strip"),
                         isOn: Binding(
                             get: { store.showQuickActionsBar },

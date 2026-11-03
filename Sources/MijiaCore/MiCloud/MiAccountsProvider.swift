@@ -236,6 +236,7 @@ public actor MiAccountsProvider: HomeProvider {
         var sceneIds = Set<String>()
         var homeIds = Set<String>()
         var identities: [String: DeviceSourceIdentity] = [:]
+        var lightGroupOwners: [String: String] = [:]
         var closesAwayGap = true
         for home in reported {
             closesAwayGap = closesAwayGap && home.closesAwayGap
@@ -249,6 +250,9 @@ public actor MiAccountsProvider: HomeProvider {
             for (id, identity) in home.deviceIdentities where identities[id] == nil {
                 identities[id] = identity
             }
+            for (memberDid, groupDid) in home.lightGroupOwners where lightGroupOwners[memberDid] == nil {
+                lightGroupOwners[memberDid] = groupDid
+            }
             for reading in home.environmentReadings where readingIds.insert(reading.id).inserted {
                 readings.append(reading)
             }
@@ -259,6 +263,9 @@ public actor MiAccountsProvider: HomeProvider {
         merged.homes = homes
         merged.accountStatuses = statuses
         merged.deviceIdentities = identities
+        merged.lightGroupOwners = lightGroupOwners.filter {
+            deviceIds.contains($0.key) && deviceIds.contains($0.value)
+        }
         // A partially reported panel or a pre-sleep cached snapshot from another account must not
         // close an away gap: the missing account may hold the door sensor that changed while asleep.
         let allFreshAfterWake = accounts.allSatisfy {

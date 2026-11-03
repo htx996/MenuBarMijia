@@ -139,6 +139,8 @@ public protocol MiCloudAPI: Sendable {
     func homeRooms() async throws -> [MiRoom]
     /// Looks up specific devices by did, including those in homes shared with this account.
     func devices(dids: [String]) async throws -> [MiDeviceRecord]
+    /// Maps each `group.*` did among `groupDids` to its member device dids.
+    func lightGroupMembers(groupDids: [String]) async throws -> [String: [String]]
     func getProps(_ keys: [MiotPropKey]) async throws -> [MiotPropKey: JSONValue]
     func setProps(_ writes: [MiotPropWrite]) async throws
     func action(_ call: MiotActionCall) async throws
@@ -156,6 +158,7 @@ public protocol MiCloudAPI: Sendable {
 
 extension MiCloudAPI {
     public func devices(dids: [String]) async throws -> [MiDeviceRecord] { [] }
+    public func lightGroupMembers(groupDids: [String]) async throws -> [String: [String]] { [:] }
     public func callAction(_ call: MiotActionCall) async throws -> JSONValue {
         try await action(call)
         return .null
@@ -309,6 +312,53 @@ public actor MiCloudClient: MiCloudAPI {
     }
 
     static let didChunkSize = 150
+    static let groupChunkSize = 100
+
+    /// Maps each `group.*` did among `groupDids` to its deduplicated member device dids (#189).
+    /// The cloud answers `v2/groupv2/query_status` with `result[].member_ship` (the plug-in SDK
+    /// spells it `membership`); both keys are accepted, and `member_ship` wins when both appear.
+    public func lightGroupMembers(groupDids: [String]) async throws -> [String: [String]] {
+        var seen: Set<String> = []
+        let unique = groupDids.filter { $0.hasPrefix("group.") && seen.insert($0).inserted }
+        var members: [String: [String]] = [:]
+        var start = 0
+        while start < unique.count {
+            let chunk = Array(unique[start..<min(start + Self.groupChunkSize, unique.count)])
+            start += Self.groupChunkSize
+            let result = try await request("v2/groupv2/query_status", data: .object([
+                "group_did": .array(chunk.map(JSONValue.string)),
+            ]))
+            for (groupDid, memberDids) in Self.parseLightGroupMembers(result) {
+                var merged = members[groupDid] ?? []
+                for did in memberDids where !merged.contains(did) { merged.append(did) }
+                members[groupDid] = merged
+            }
+        }
+        return members
+    }
+
+    /// `result[]` rows carry the group did and an object keyed by member did. Missing, malformed or
+    /// non-object memberships are skipped rather than failing the whole refresh.
+    static func parseLightGroupMembers(_ result: JSONValue) -> [String: [String]] {
+        guard let rows = result.arrayValue else { return [:] }
+        var groups: [String: [String]] = [:]
+        for row in rows {
+            guard let groupDid = row["group_did"]?.idString, !groupDid.isEmpty else { continue }
+            let membership = [row["member_ship"], row["membership"]]
+                .compactMap { $0 }
+                .first { value in
+                    if case .object = value { return true }
+                    return false
+                }
+            guard let membership, case .object(let memberDids) = membership else { continue }
+            var members = groups[groupDid] ?? []
+            for did in memberDids.keys where !did.isEmpty && !members.contains(did) {
+                members.append(did)
+            }
+            groups[groupDid] = members
+        }
+        return groups
+    }
 
     private func deviceListPaged(dids: [String]? = nil) async throws -> [MiDeviceRecord] {
         var records: [MiDeviceRecord] = []

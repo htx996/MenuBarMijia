@@ -57,6 +57,8 @@ public final class HomeStore {
     public internal(set) var homes: [HomeOption] = []
     public internal(set) var selectedMiHomeId: String? = UserDefaults.standard.string(forKey: MiCloudProvider.selectedHomeKey)
     public internal(set) var devices: [SmartDevice] = []
+    /// Member did → Mi light-group did from the current snapshot; folding reads it (#189).
+    public internal(set) var lightGroupOwners: [String: String] = [:]
     public internal(set) var environmentReadings: [EnvironmentReading] = []
     public internal(set) var scenes: [HomeScene] = []
     public internal(set) var hasReceivedInitialSnapshot = false
@@ -99,6 +101,11 @@ public final class HomeStore {
 
     public var hideOfflineDevices: Bool {
         didSet { userDefaults.set(hideOfflineDevices, forKey: "hide_offline_devices") }
+    }
+
+    /// Hide lights that belong to a Mi light group while the group card itself is on screen (#189).
+    public var hideGroupedLights: Bool {
+        didSet { userDefaults.set(hideGroupedLights, forKey: "hide_grouped_lights") }
     }
 
     public var enableGlobalHotkey: Bool {
@@ -584,6 +591,7 @@ public final class HomeStore {
         )
         self.askWhenUnsureBeforeAIActions = boolOrDefaultTrue(Self.askWhenUnsureKey)
         self.hideOfflineDevices = ud.bool(forKey: "hide_offline_devices")
+        self.hideGroupedLights = boolOrDefaultTrue("hide_grouped_lights")
         self.enableGlobalHotkey = boolOrDefaultTrue("enable_global_hotkey")
         self.enableSafetyAlerts = boolOrDefaultTrue("enable_safety_alerts")
         self.blockControlWhileLocked = boolOrDefaultTrue("block_control_while_locked")

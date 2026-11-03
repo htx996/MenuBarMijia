@@ -38,6 +38,32 @@ export const PANEL_HEIGHTS: ReadonlyArray<{ readonly id: PanelHeight; readonly t
   { id: "max", get title() { return t("最大"); }, px: 0 },
 ];
 
+/**
+ * Where the panel opens inside the active monitor's work area (#204). `auto` follows the taskbar edge
+ * and the tray icon; a corner pins it. The backend owns the persisted value because dragging the panel
+ * updates it from the window event loop.
+ */
+export type PanelAnchor = "auto" | "topLeft" | "topRight" | "bottomLeft" | "bottomRight";
+
+export interface PanelPlacement {
+  readonly anchor: PanelAnchor;
+}
+
+export const PANEL_ANCHORS: ReadonlyArray<{ readonly id: PanelAnchor; readonly title: string }> = [
+  { id: "auto", get title() { return t("跟随任务栏"); } },
+  { id: "topLeft", get title() { return t("左上"); } },
+  { id: "topRight", get title() { return t("右上"); } },
+  { id: "bottomLeft", get title() { return t("左下"); } },
+  { id: "bottomRight", get title() { return t("右下"); } },
+];
+
+/** Reads what the backend reports; an unknown or missing value keeps following the taskbar. */
+export function parsePanelPlacement(value: unknown): PanelPlacement {
+  const candidate = value !== null && typeof value === "object" && "anchor" in value ? value.anchor : undefined;
+  const known = PANEL_ANCHORS.find((item) => item.id === candidate);
+  return { anchor: known?.id ?? "auto" };
+}
+
 export type TileSize = "auto" | "half" | "full" | "panel";
 
 export const TILE_SIZES: ReadonlyArray<{ readonly id: TileSize; readonly title: string }> = [

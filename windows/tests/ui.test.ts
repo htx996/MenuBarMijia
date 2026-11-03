@@ -1468,6 +1468,68 @@ describe("Interface language and temperature units (#52)", () => {
   });
 });
 
+describe("Panel placement (#204)", () => {
+  function startWithCallLog(calls: Array<{ command: string; args: Record<string, unknown> }>): void {
+    const invoke = async (command: string, args: Record<string, unknown> = {}): Promise<unknown> => {
+      calls.push({ command, args });
+      return undefined;
+    };
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { value: { invoke }, configurable: true });
+    localStorage.setItem("menumijia.windows.settings.v2", JSON.stringify({
+      connectionMode: "demo",
+      hasCompletedOnboarding: true,
+    }));
+    new MenuMijiaWindowsApp(element("#app"));
+  }
+
+  it("sends the chosen anchor to the backend and marks it active", async () => {
+    const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
+    startWithCallLog(calls);
+    await setImmediate();
+
+    await click("#btn-settings");
+    assert.ok(document.querySelector('[data-panel-anchor="topLeft"]'), "anchor picker is present in settings");
+    await click('[data-panel-anchor="topLeft"]');
+
+    assert.deepEqual(
+      calls.filter((call) => call.command === "set_panel_placement").map((call) => call.args),
+      [{ anchor: "topLeft" }],
+    );
+    assert.equal(document.querySelector('[data-panel-anchor="topLeft"]')?.getAttribute("aria-pressed"), "true");
+  });
+
+  it("shows the anchor the backend reports, so a drag is reflected in the settings", async () => {
+    const invoke = async (command: string): Promise<unknown> =>
+      command === "panel_placement" ? { anchor: "bottomLeft" } : undefined;
+    Object.defineProperty(window, "__TAURI_INTERNALS__", { value: { invoke }, configurable: true });
+    localStorage.setItem("menumijia.windows.settings.v2", JSON.stringify({
+      connectionMode: "demo",
+      hasCompletedOnboarding: true,
+    }));
+    new MenuMijiaWindowsApp(element("#app"));
+    await click("#btn-settings");
+    await setImmediate();
+
+    assert.equal(document.querySelector('[data-panel-anchor="bottomLeft"]')?.getAttribute("aria-pressed"), "true");
+  });
+
+  it("starts an OS window move from the header but not from its buttons", async () => {
+    const calls: Array<{ command: string; args: Record<string, unknown> }> = [];
+    startWithCallLog(calls);
+    await setImmediate();
+
+    const press = (selector: string): void => {
+      element(selector).dispatchEvent(new window.MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+    };
+    press(".cc-title-stack");
+    assert.deepEqual(calls.filter((call) => call.command === "start_panel_drag").length, 1);
+
+    calls.length = 0;
+    press("#btn-mic");
+    assert.deepEqual(calls.filter((call) => call.command === "start_panel_drag").length, 0);
+  });
+});
+
 describe("Customizable global shortcut (#43)", () => {
   it("registers Alt+M by default, records a custom shortcut, persists it, and unregisters when disabled", async () => {
     const hotkeyCalls: Array<{ enabled: boolean; shortcut: string }> = [];

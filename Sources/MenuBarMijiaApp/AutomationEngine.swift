@@ -29,14 +29,28 @@ final class AutomationEngine {
 
     private let ruleStore: AutomationRuleStore
     private let deduper: AutomationTriggerDeduper
+    private let injectedContextProvider: (any MacContextProviding)?
+    private let calendar: Calendar
     private weak var store: HomeStore?
     private var tokens: [any NSObjectProtocol] = []
     private var lastExternalDisplayCount: Int
+    private var activeContextProvider: (any MacContextProviding)?
+    private var lastContext: MacContextSnapshot?
+    /// Away/back notifications drive this so a locked or sleeping Mac does not count as “still
+    /// using the computer” for late-night rules.
+    private var isUserPresent = true
 
-    /// `defaults` is injectable for tests; the app always uses `.standard`.
-    init(defaults: UserDefaults = .standard) {
+    /// `defaults` and `contextProvider` are injectable for tests; the app always uses `.standard`
+    /// and the real CoreMediaIO/CoreWLAN/EventKit observer.
+    init(
+        defaults: UserDefaults = .standard,
+        contextProvider: (any MacContextProviding)? = nil,
+        calendar: Calendar = .current
+    ) {
         self.ruleStore = AutomationRuleStore(defaults: defaults)
         self.deduper = AutomationTriggerDeduper(defaults: defaults)
+        self.injectedContextProvider = contextProvider
+        self.calendar = calendar
         self.lastExternalDisplayCount = Self.activeExternalDisplayCount()
     }
 
@@ -65,23 +79,85 @@ final class AutomationEngine {
             }
         }
         tokens.append(screenToken)
+
+        startContextObservation()
     }
 
     /// Test seam: binds the store without subscribing to system notifications, so `handle(trigger:)`
-    /// can be driven directly (Notifying systems cannot post in unit tests).
+    /// and `handle(context:)` can be driven directly (the notifying systems cannot post in unit
+    /// tests).
     func attach(store: HomeStore) {
         self.store = store
+    }
+
+    /// Test seam: starts the injected context provider (or the real observer) without subscribing
+    /// to NSWorkspace/distributed notifications. `start(with:)` calls the same method.
+    func startContextObservation() {
+        guard activeContextProvider == nil else { return }
+        let provider: any MacContextProviding
+        if let injectedContextProvider {
+            provider = injectedContextProvider
+        } else {
+            // Only rules the user already enabled can prompt; starting the app alone never does.
+            MacContextPermissionRequester.requestPermissions(for: ruleStore.load())
+            provider = MacContextObserver()
+        }
+        activeContextProvider = provider
+        provider.start { [weak self] snapshot, now in
+            await self?.handle(context: snapshot, at: now)
+        }
+    }
+
+    /// Settings calls this after a rule is added, removed or toggled so a newly enabled Focus,
+    /// calendar or Wi-Fi rule can request its permission immediately. The observer re-reads the
+    /// authorization status on its next tick; it does not need to be restarted.
+    func rulesDidChange() {
+        MacContextPermissionRequester.requestPermissions(for: ruleStore.load())
     }
 
     /// Test seam: notifying systems cannot post in unit tests, so the mapping is exercised by
     /// calling this directly. Observers above do exactly the same thing.
     func handle(trigger: AutomationTrigger, at now: Date = Date()) async {
+        switch trigger {
+        case .away:
+            isUserPresent = false
+        case .back:
+            isUserPresent = true
+        default:
+            break
+        }
         guard let store else { return }
         let rules = AutomationMatcher.rules(for: trigger, in: ruleStore.load())
         // An empty list must not burn the cooldown; the user may add a rule a moment later.
         guard !rules.isEmpty else { return }
         guard deduper.shouldFire(trigger, at: now) else { return }
         for rule in rules {
+            await execute(rule, store: store)
+        }
+    }
+
+    /// Evaluates every enabled rule against one Mac context snapshot. The pure `MacContextAutomation`
+    /// switch decides which signal changed; this method only applies the per-rule cooldown and
+    /// executes.
+    func handle(context: MacContextSnapshot, at now: Date = Date()) async {
+        var effective = context
+        effective.isUserPresent = isUserPresent && context.isUserPresent
+        let previous = lastContext
+        lastContext = effective
+        guard let store else { return }
+        for rule in ruleStore.load() where rule.isEnabled {
+            let events = MacContextAutomation.events(
+                for: rule,
+                previous: previous,
+                current: effective,
+                at: now,
+                calendar: calendar
+            )
+            // Calendar rules return every eligible meeting; skip an already-fired event and let a
+            // later meeting in the same lead window fire instead of being masked by it.
+            guard events.contains(where: {
+                deduper.shouldFire($0.dedupeKey, at: now, cooldown: $0.cooldown)
+            }) else { continue }
             await execute(rule, store: store)
         }
     }

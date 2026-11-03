@@ -91,7 +91,7 @@ Heading out or turning in? Hold "All Off" for 0.6 seconds to switch off particip
 
 ### 3. macOS Display & Lock-Screen Automation
 
-Turn everyday desktop transitions into ambient triggers. Configure a rule to turn off lights when you lock your screen or put your Mac to sleep. You can also configure a separate rule for returning.
+Turn everyday desktop transitions into ambient triggers. Configure a rule to turn off lights when you lock your screen or put your Mac to sleep, and another for returning. Mac-only rules can also react to camera/microphone use, AC power and battery thresholds, the Wi-Fi network name, Focus mode, upcoming calendar meetings, and late-night use. All of them are off by default; Wi-Fi name, Focus status, and Calendar require system permission before their rules fire.
 
 <p align="center">
   <img src="docs/assets/readme-v2/automation-away.gif" alt="macOS automation demo: lock the screen and turn off the living room light" width="900">
@@ -124,7 +124,7 @@ The macOS version is built natively in Swift 6, while the Windows 11 client is a
 | **GrokBall & Side Suggestions** | ✅ Native Canvas | ✅ Bundled SVG engine | Click the ball for up to four reversible device actions; click again or press Esc to collapse. On macOS, neutral expressions use a black ball with white eyes, dragging repositions it, and a 0.5-second hold starts voice input. Suggestions follow its side of the panel and adapt their rows near screen edges. Windows retains the fixed side attachment. Eyes follow the pointer, and Reduce Motion uses static expressions. Based on [TyCoding/grok-ball](https://github.com/TyCoding/grok-ball) (MIT). |
 | **Quick Actions & Scenes Strip** | ✅ 3 actions | ✅ 4 actions | Toggle in Settings — "Show Quick Actions Strip" on macOS, "Show top quick actions bar" on Windows. macOS ships All Lights Off, Soft Night Light, and Sleep Climate Off; Windows ships All main lights on, Lights off for sleep, 25° cool, and Brighten lights. Home Assistant scenes are appended on both. On macOS, four or fewer pills stretch edge to edge and the rest scroll horizontally with a normal mouse wheel. |
 | **All-Off & Instant Undo** | ✅ Supported | ✅ Supported | A 0.6s hold confirms the action; plugs and vacuums are excluded by default; reversible actions show an undo banner for 10–15s |
-| **Mac Event Automation** | ✅ Supported | — Not yet | Event triggers on screen lock, sleep, wake, and external display connections |
+| **Mac Event Automation** | ✅ Supported | — Not yet | Triggers on lock, sleep, wake, external displays, camera/microphone use, power/battery, Wi-Fi, Focus, Calendar, and late-night use (all Mac-only signals off by default) |
 | **Apple Shortcuts (App Intents)** | ✅ Supported (4 actions) | — Not yet | Toggle Device, Run Scene, Voice Command, Query Room Climate |
 | **URL Scheme Control** | ✅ Supported | — Not yet | `menumijia://toggle` calls require confirmation by default; direct control can be enabled in settings |
 | **Sensor Trend Line Charts** | ✅ 24h / 7d trends | ⚠️ Real-time value only | macOS charts temperature or humidity over selectable periods; Windows shows current readings |

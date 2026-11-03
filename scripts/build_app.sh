@@ -196,6 +196,14 @@ cat > "$APP_DIR/Contents/Info.plist" <<PLIST
     </array>
     <key>NSMicrophoneUsageDescription</key>
     <string>用于通过语音指令直接控制米家智能家居设备。</string>
+    <key>NSLocationUsageDescription</key>
+    <string>用于读取当前 Wi-Fi 名称，以便按网络自动执行规则。</string>
+    <key>NSFocusStatusUsageDescription</key>
+    <string>用于在专注模式切换时自动执行规则。</string>
+    <key>NSCalendarsFullAccessUsageDescription</key>
+    <string>用于在日历会议开始前自动执行规则，只读取事件开始时间，不修改日历。</string>
+    <key>NSCalendarsUsageDescription</key>
+    <string>用于在日历会议开始前自动执行规则，只读取事件开始时间，不修改日历。</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>用于将您的中文语音指令实时识别为智能家居控制动作。</string>
     <key>NSAppTransportSecurity</key>
@@ -213,6 +221,10 @@ mkdir -p "$APP_DIR/Contents/Resources/zh-Hans.lproj"
 cat > "$APP_DIR/Contents/Resources/zh-Hans.lproj/InfoPlist.strings" <<'STRINGS_ZH'
 "NSLocalNetworkUsageDescription" = "用于局域网自动发现并实时连接 Home Assistant 及电视等智能家居设备。";
 "NSMicrophoneUsageDescription" = "用于通过语音指令直接控制米家智能家居设备。";
+"NSLocationUsageDescription" = "用于读取当前 Wi-Fi 名称，以便按网络自动执行规则。";
+"NSFocusStatusUsageDescription" = "用于在专注模式切换时自动执行规则。";
+"NSCalendarsFullAccessUsageDescription" = "用于在日历会议开始前自动执行规则，只读取事件开始时间，不修改日历。";
+"NSCalendarsUsageDescription" = "用于在日历会议开始前自动执行规则，只读取事件开始时间，不修改日历。";
 "NSSpeechRecognitionUsageDescription" = "用于将您的语音指令实时识别为智能家居控制动作。";
 STRINGS_ZH
 
@@ -220,6 +232,10 @@ mkdir -p "$APP_DIR/Contents/Resources/en.lproj"
 cat > "$APP_DIR/Contents/Resources/en.lproj/InfoPlist.strings" <<'STRINGS_EN'
 "NSLocalNetworkUsageDescription" = "Used to automatically discover and connect to Home Assistant and smart TVs on your local network.";
 "NSMicrophoneUsageDescription" = "Used to control your Xiaomi Home smart devices with voice commands.";
+"NSLocationUsageDescription" = "Used to read the current Wi-Fi network name so rules can run by network.";
+"NSFocusStatusUsageDescription" = "Used to run rules when Focus mode changes.";
+"NSCalendarsFullAccessUsageDescription" = "Used to run rules before calendar meetings. Only event start times are read; calendar events are never modified.";
+"NSCalendarsUsageDescription" = "Used to run rules before calendar meetings. Only event start times are read; calendar events are never modified.";
 "NSSpeechRecognitionUsageDescription" = "Used to transcribe your voice commands into smart home actions in real time.";
 STRINGS_EN
 fi

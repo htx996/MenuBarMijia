@@ -314,4 +314,36 @@ struct MiAccountsProviderTests {
         #expect(bothReportedAfterWake)
         await provider.shutdown()
     }
+
+    @Test("Light-group owners merge across accounts only for cards that survived the merge")
+    func groupOwnersMergeAcrossAccounts() async throws {
+        let cnApi = StubMiCloudAPI(
+            devices: [
+                MiDeviceRecord(did: "group.cn", name: "客厅灯组", model: "yeelink.light.ceiling22", isOnline: true),
+                MiDeviceRecord(did: "cn-light", name: "客厅灯", model: "yeelink.light.ceiling22", isOnline: true),
+            ],
+            rooms: [],
+            values: [MiotFixtures.key("cn-light", 2, 1): .bool(true)]
+        )
+        let deApi = StubMiCloudAPI(
+            devices: [
+                MiDeviceRecord(did: "group.de", name: "卧室灯组", model: "yeelink.light.ceiling22", isOnline: true),
+                MiDeviceRecord(did: "de-light", name: "卧室灯", model: "yeelink.light.ceiling22", isOnline: true),
+            ],
+            rooms: [],
+            values: [MiotFixtures.key("de-light", 2, 1): .bool(true)]
+        )
+        await cnApi.setGroupMembers(["group.cn": ["cn-light", "dropped-light"]])
+        await deApi.setGroupMembers(["group.de": ["de-light"]])
+
+        let provider = Self.makeProvider([Self.cn, Self.de], cnAPI: cnApi, deAPI: deApi)
+        let (log, task) = consume(provider)
+        defer { task.cancel() }
+
+        let mapped = await log.wait { events in
+            await events.snapshots.last?.lightGroupOwners == ["cn-light": "group.cn", "de-light": "group.de"]
+        }
+        #expect(mapped)
+        await provider.shutdown()
+    }
 }

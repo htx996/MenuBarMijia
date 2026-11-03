@@ -210,6 +210,7 @@ extension HomeStore {
             if connectedBackends != nextConnected { connectedBackends = nextConnected }
             if deviceBackends != snapshot.deviceBackends { deviceBackends = snapshot.deviceBackends }
             if pairedDeviceIDs != snapshot.pairedDeviceIDs { pairedDeviceIDs = snapshot.pairedDeviceIDs }
+            if lightGroupOwners != snapshot.lightGroupOwners { lightGroupOwners = snapshot.lightGroupOwners }
             if sourceStatuses != snapshot.sourceStatuses { sourceStatuses = snapshot.sourceStatuses }
             var nextRooms = snapshot.rooms
             if var lgDev = latestLGDevice, lgConfig.isEnabled {

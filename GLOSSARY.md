@@ -100,6 +100,10 @@ _Avoid_: Static shortcut（静态快捷方式）、Random tip（随机提示）
 控制面板外的球面双目动态组件，实时注视光标，并随睡眠、待机、聆听、思考、执行成功与异常状态切换表情；macOS 的默认、好奇和睡眠表情使用黑色球体与白色眼睛，支持自由拖动与长按 0.5 秒进入语音输入。轻点后最多展示四项设备 `ProactiveSuggestion`，macOS 根据球在主面板的左、右、上、下位置向外安排胶囊，并在屏幕边缘调整行列或换向；Windows 保留固定侧挂与纵向推荐。展开不改变主面板卡片布局，设备推荐支持撤销，场景可通过语音或文本指令执行。
 _Avoid_: Static icon（静态图标）、Chatbot avatar（聊天头像）
 
+**LightGroupFold（米家灯组折叠）**：
+把米家云端 `group.*` 灯组与其成员单灯合成一张卡片的展示规则：`v2/groupv2/query_status` 返回的成员归属（`member_ship`，插件 SDK 写作 `membership`）随设备列表缓存到 `SynthesizedHome.lightGroupOwners`；面板只在灯组卡片本身可见时，从 `HomeStore.visibleDevices` 隐藏其成员灯，`filteredDevices` 仍保留完整集合，因此全关、场景、搜索与助手继续按每盏成员灯计算。偏好「灯组内的单灯不重复显示」(`hideGroupedLights`) 默认开启。
+_Avoid_: DeviceGroup（本地自定义分组）、Room grouping（房间分组）
+
 **ViewPreference（本地视图偏好）**：
-仅作用于当前客户端的展示配置（包括星标常用置顶、自定义分组 `DeviceGroup`、长按拖拽排序、通过编辑态卡片右下角圆弧手柄拖拽或轻点调节的分页面卡片尺寸 `TileSize`、单设备固定数据源覆盖、隐藏特定设备、隐藏离线设备、面板高度 `PanelHeight`、菜单栏常驻指标选择），存储在本地且不回写远端数据源。
+仅作用于当前客户端的展示配置（包括星标常用置顶、自定义分组 `DeviceGroup`、长按拖拽排序、通过编辑态卡片右下角圆弧手柄拖拽或轻点调节的分页面卡片尺寸 `TileSize`、单设备固定数据源覆盖、隐藏特定设备、隐藏离线设备、面板高度 `PanelHeight`、Windows 面板位置 `PanelAnchor`（跟随任务栏或工作区四角，保存在 `%APPDATA%\MenuBarMijia\panel-placement.json` 以便拖动窗口后即时落盘）、菜单栏常驻指标选择），存储在本地且不回写远端数据源。
 _Avoid_: Device config（设备配置）、Profile（档案）

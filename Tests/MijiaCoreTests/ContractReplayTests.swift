@@ -98,6 +98,16 @@ struct ContractReplayTests {
         ])
     }
 
+    @Test("Light-group status keeps the member dids and tolerates both membership spellings")
+    func lightGroupStatus() throws {
+        let result = try MiCloudClient.unwrapResult(Self.decode("mi_group_query_status.json"))
+        let members = MiCloudClient.parseLightGroupMembers(result)
+
+        #expect(Set(members.keys) == ["group.1000001", "group.1000002"])
+        #expect(members["group.1000001"]?.sorted() == ["did-light-0001", "did-light-0002"])
+        #expect(members["group.1000002"] == ["did-light-0003"])
+    }
+
     @Test("Property results keep values and drop per-property failures")
     func propertyValues() throws {
         let result = try MiCloudClient.unwrapResult(Self.decode("mi_props_get.json"))

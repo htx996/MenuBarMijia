@@ -19,6 +19,14 @@ struct AutomationSettingsSection: View {
     @State private var newDeviceIds: Set<String> = []
     @State private var newDeviceTurnOn = false
 
+    // #174: per-trigger parameters. They stay at safe defaults unless the selected trigger uses
+    // them, and are copied into the rule when it is added.
+    @State private var newBatteryThreshold = 20
+    @State private var newWiFiSSID = ""
+    @State private var newLateNightStart = 23
+    @State private var newLateNightEnd = 6
+    @State private var newCalendarLeadMinutes = 1
+
     private enum AutomationActionKind: String, CaseIterable, Identifiable {
         case quickAction, scene, devices
 
@@ -37,8 +45,8 @@ struct AutomationSettingsSection: View {
         let _ = store.effectiveLanguage
         SettingsSection(title: L10n.tr("自动化与外部控制", "Automation & External Control")) {
             Text(L10n.tr(
-                "规则默认没有任何内容。锁屏、合盖、睡眠会合并成一个「离开」触发；解锁与唤醒合并成「回来」。同一触发一分钟内只执行一次。",
-                "No rules exist by default. Lock, lid close and sleep are grouped as Away; unlock and wake as Back. The same trigger runs at most once per minute."
+                "规则默认没有任何内容。锁屏、合盖、睡眠会合并成一个「离开」触发；解锁与唤醒合并成「回来」。同一触发一分钟内只执行一次。摄像头 / 麦克风、电源与电量、Wi-Fi、专注状态、日历和深夜使用等 Mac 专属触发默认关闭，按需逐条添加；Wi-Fi 名称、专注状态和日历需要系统权限，未授权时对应规则不会触发。",
+                "No rules exist by default. Lock, lid close and sleep are grouped as Away; unlock and wake as Back. The same trigger runs at most once per minute. Mac-only signals (camera/microphone, power and battery, Wi-Fi, Focus, Calendar, late-night use) are off until you add a rule. Wi-Fi name, Focus status and Calendar need system permission; without it their rules do not fire."
             ))
             .font(.system(size: DesignTokens.TypeSize.caption))
             .foregroundStyle(.secondary)
@@ -101,6 +109,12 @@ struct AutomationSettingsSection: View {
                     .font(.system(size: DesignTokens.TypeSize.caption))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
+                if let detail = triggerDetail(rule) {
+                    Text(detail)
+                        .font(.system(size: DesignTokens.TypeSize.caption))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
             }
 
             Spacer(minLength: 6)
@@ -139,6 +153,39 @@ struct AutomationSettingsSection: View {
         persist()
     }
 
+    /// One line under the action summary for the parameters that change trigger behavior.
+    private func triggerDetail(_ rule: AutomationRule) -> String? {
+        let options = rule.triggerOptions
+        switch rule.trigger {
+        case .batteryBelowThreshold:
+            return L10n.format(
+                "电量低于 %@%",
+                "Battery below %@%",
+                String(options.batteryThresholdPercent)
+            )
+        case .wifiNetworkJoined, .wifiNetworkLeft:
+            if let ssid = options.wifiSSID {
+                return L10n.format("Wi-Fi：%@", "Wi-Fi: %@", ssid)
+            }
+            return L10n.tr("任意 Wi-Fi 网络", "Any Wi-Fi network")
+        case .lateNightUsage:
+            return L10n.format(
+                "%@–%@",
+                "%@–%@",
+                String(format: "%02d:00", options.lateNightWindow.startHour),
+                String(format: "%02d:00", options.lateNightWindow.endHour)
+            )
+        case .calendarMeetingStartingSoon:
+            return L10n.format(
+                "提前 %@ 分钟",
+                "%@ min before",
+                String(options.calendarLeadMinutes)
+            )
+        default:
+            return nil
+        }
+    }
+
     // MARK: - New Rule
 
     private var newRuleBuilder: some View {
@@ -173,6 +220,8 @@ struct AutomationSettingsSection: View {
                 .controlSize(.regular)
             }
 
+            triggerOptionsEditor
+
             actionEditor
 
             HStack {
@@ -186,6 +235,95 @@ struct AutomationSettingsSection: View {
                 .buttonStyle(PillActionButtonStyle(isSelected: canAdd))
                 .disabled(!canAdd)
             }
+        }
+    }
+
+    // MARK: - Trigger Parameters (#174)
+
+    @ViewBuilder
+    private var triggerOptionsEditor: some View {
+        switch newTrigger {
+        case .batteryBelowThreshold:
+            HStack(spacing: 6) {
+                Text(L10n.tr("电量低于", "Battery below"))
+                    .font(.system(size: DesignTokens.TypeSize.caption))
+                    .foregroundStyle(.secondary)
+                Stepper(value: $newBatteryThreshold, in: 1...100) {
+                    Text("\(newBatteryThreshold)%")
+                        .font(.system(size: DesignTokens.TypeSize.caption))
+                }
+                .fixedSize()
+            }
+        case .wifiNetworkJoined, .wifiNetworkLeft:
+            TextField(
+                L10n.tr("Wi-Fi 名称（留空表示任意网络）", "Wi-Fi name (empty = any network)"),
+                text: $newWiFiSSID
+            )
+            .textFieldStyle(.roundedBorder)
+            .frame(maxWidth: 280)
+            .controlSize(.regular)
+        case .lateNightUsage:
+            HStack(spacing: 6) {
+                Text(L10n.tr("从", "From"))
+                    .font(.system(size: DesignTokens.TypeSize.caption))
+                    .foregroundStyle(.secondary)
+                hourPicker($newLateNightStart)
+                Text(L10n.tr("到", "to"))
+                    .font(.system(size: DesignTokens.TypeSize.caption))
+                    .foregroundStyle(.secondary)
+                hourPicker($newLateNightEnd)
+            }
+        case .calendarMeetingStartingSoon:
+            HStack(spacing: 6) {
+                Text(L10n.tr("提前", "Lead"))
+                    .font(.system(size: DesignTokens.TypeSize.caption))
+                    .foregroundStyle(.secondary)
+                Stepper(value: $newCalendarLeadMinutes, in: 1...60) {
+                    Text(L10n.format("%@ 分钟", "%@ min", String(newCalendarLeadMinutes)))
+                        .font(.system(size: DesignTokens.TypeSize.caption))
+                }
+                .fixedSize()
+            }
+        default:
+            EmptyView()
+        }
+
+        if let permission = newTrigger.requiredPermission {
+            Text(permissionHint(permission))
+                .font(.system(size: DesignTokens.TypeSize.caption))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func hourPicker(_ hour: Binding<Int>) -> some View {
+        Picker("", selection: hour) {
+            ForEach(0..<24, id: \.self) { value in
+                Text(String(format: "%02d:00", value)).tag(value)
+            }
+        }
+        .labelsHidden()
+        .frame(width: 76)
+        .controlSize(.regular)
+    }
+
+    private func permissionHint(_ permission: AutomationPermission) -> String {
+        switch permission {
+        case .location:
+            return L10n.tr(
+                "读取 Wi-Fi 名称需要「定位」权限。未授权时 Wi-Fi 规则不会触发，其他规则不受影响。",
+                "Reading the Wi-Fi name requires Location permission. Wi-Fi rules stay inactive without it; other rules are unaffected."
+            )
+        case .focus:
+            return L10n.tr(
+                "专注状态需要系统权限。公开 API 只提供「是否处于专注」，无法读取具体专注模式名称。",
+                "Focus status requires system permission. The public API only reports whether some Focus is active, not which Focus mode."
+            )
+        case .calendar:
+            return L10n.tr(
+                "日历规则需要完整的日历访问权限，只读取开始时间，不修改事件。",
+                "Calendar rules need full calendar access. Only event start times are read; events are never modified."
+            )
         }
     }
 
@@ -303,12 +441,22 @@ struct AutomationSettingsSection: View {
             guard !newDeviceIds.isEmpty else { return }
             action = .devices(ids: newDeviceIds.sorted(), isOn: newDeviceTurnOn)
         }
-        rules.append(AutomationRule(trigger: newTrigger, action: action))
+        let options = AutomationTriggerOptions(
+            batteryThresholdPercent: newBatteryThreshold,
+            wifiSSID: newWiFiSSID,
+            lateNightStartHour: newLateNightStart,
+            lateNightEndHour: newLateNightEnd,
+            calendarLeadMinutes: newCalendarLeadMinutes
+        )
+        rules.append(AutomationRule(trigger: newTrigger, action: action, triggerOptions: options))
         newDeviceIds = []
         persist()
     }
 
     private func persist() {
         AutomationRuleStore().save(rules)
+        // #174: a newly enabled Wi-Fi/Focus/calendar rule asks for its permission now, not at the
+        // next app launch. Existing permissions are never re-prompted.
+        AutomationEngine.shared.rulesDidChange()
     }
 }

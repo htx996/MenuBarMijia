@@ -62,6 +62,30 @@ extension HomeStore {
         devices.filter { passesVisibility($0) && listCut.matches($0) }
     }
 
+    /// Member device ids hidden because their own light-group card is currently on screen and the
+    /// user asked to fold grouped lights (#189). `filteredDevices` keeps the full set so all-off,
+    /// scenes, search and assistant targeting still see every member.
+    public var foldedDeviceIds: Set<String> {
+        guard hideGroupedLights, !lightGroupOwners.isEmpty else { return [] }
+        let listed = Dictionary(filteredDevices.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var folded: Set<String> = []
+        for device in filteredDevices {
+            // An offline group card cannot drive its members, so never fold them behind it.
+            guard let groupDid = lightGroupOwners[device.id],
+                  let group = listed[groupDid],
+                  group.isOnline else { continue }
+            folded.insert(device.id)
+        }
+        return folded
+    }
+
+    /// The panel list: `filteredDevices` with member lights folded into their visible group card.
+    public var visibleDevices: [SmartDevice] {
+        let folded = foldedDeviceIds
+        guard !folded.isEmpty else { return filteredDevices }
+        return filteredDevices.filter { !folded.contains($0.id) }
+    }
+
     public var kindChips: [DeviceKindTag] {
         var tags = Set(devices.filter(passesVisibility).map { $0.kind.tag })
         if case .kind(let selected) = listCut { tags.insert(selected) }
@@ -69,7 +93,7 @@ extension HomeStore {
     }
 
     public var favoriteDevices: [SmartDevice] {
-        let favs = filteredDevices.filter { favoriteDeviceIds.contains($0.id) }
+        let favs = visibleDevices.filter { favoriteDeviceIds.contains($0.id) }
         guard !favoriteOrder.isEmpty else { return favs }
         let orderIndex = Dictionary(uniqueKeysWithValues: favoriteOrder.enumerated().map { ($1, $0) })
         return favs.sorted { a, b in
@@ -81,14 +105,14 @@ extension HomeStore {
     }
 
     public var nonFavoriteDevices: [SmartDevice] {
-        filteredDevices.filter { !favoriteDeviceIds.contains($0.id) }
+        visibleDevices.filter { !favoriteDeviceIds.contains($0.id) }
     }
 
     public var orderedVisibleDevices: [SmartDevice] {
         if selectedRoomId == nil {
             return favoriteDevices + nonFavoriteDevices
         }
-        return filteredDevices
+        return visibleDevices
     }
 
     public var menuBarSymbolName: String {

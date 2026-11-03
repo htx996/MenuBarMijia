@@ -1,0 +1,31 @@
+{
+  "_fixture": {
+    "endpoint": "POST /app/v2/groupv2/query_status",
+    "captured": "2026-11-03",
+    "sanitised": "group and device dids replaced with synthetic values; field shapes, the member_ship spelling and one malformed row preserved from the recorded response",
+    "shape": "decrypted response envelope {code, message, result}; result is an array of group rows keyed by member did"
+  },
+  "code": 0,
+  "message": "ok",
+  "result": [
+    {
+      "group_did": "group.1000001",
+      "status": "1",
+      "member_ship": {"did-light-0001": "1", "did-light-0002": "1"}
+    },
+    {
+      "group_did": "group.1000002",
+      "status": "1",
+      "membership": {"did-light-0003": "1"}
+    },
+    {
+      "group_did": "group.1000003",
+      "status": "1"
+    },
+    {
+      "group_did": "group.1000004",
+      "status": "1",
+      "member_ship": "not-an-object"
+    }
+  ]
+}

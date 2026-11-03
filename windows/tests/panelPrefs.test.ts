@@ -4,6 +4,7 @@ import { describe, it } from "node:test";
 import type { SmartDevice } from "../src/core/models.js";
 import {
   DEFAULT_GLOBAL_SHORTCUT,
+  PANEL_ANCHORS,
   SKINS,
   applyOrder,
   chosenSize,
@@ -16,6 +17,7 @@ import {
   normalizeGlobalShortcut,
   pageSections,
   parseGlobalShortcut,
+  parsePanelPlacement,
   recordShortcutFromKeyEvent,
   targetSize,
   releaseVelocity,
@@ -184,5 +186,25 @@ describe("panel layout prefs", () => {
       recordShortcutFromKeyEvent({ key: "-", code: "NumpadSubtract", ctrlKey: true }),
       { kind: "invalid" },
     );
+  });
+});
+
+describe("panel placement (#204)", () => {
+  it("offers following the taskbar plus each work-area corner", () => {
+    assert.deepEqual(PANEL_ANCHORS.map((anchor) => anchor.id), [
+      "auto",
+      "topLeft",
+      "topRight",
+      "bottomLeft",
+      "bottomRight",
+    ]);
+  });
+
+  it("keeps a reported anchor and falls back to following the taskbar", () => {
+    assert.deepEqual(parsePanelPlacement({ anchor: "topLeft" }), { anchor: "topLeft" });
+    assert.deepEqual(parsePanelPlacement({ anchor: "bottomRight" }), { anchor: "bottomRight" });
+    for (const value of [undefined, null, {}, { anchor: "middle" }, "bottomLeft", 3]) {
+      assert.deepEqual(parsePanelPlacement(value), { anchor: "auto" });
+    }
   });
 });
