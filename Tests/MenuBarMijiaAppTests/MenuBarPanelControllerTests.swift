@@ -89,7 +89,7 @@ struct MenuBarPanelControllerTests {
         #expect(controller.panelWindow == nil)
     }
 
-    @Test("Status context menu has Connections, Settings, updates, and Quit in both languages")
+    @Test("Status context menu has live mode, source status, Settings, updates, and Quit in both languages")
     func statusContextMenuStructureAndLocalization() {
         let controller = MenuBarPanelController()
 
@@ -106,23 +106,27 @@ struct MenuBarPanelControllerTests {
                 #expect(submenu != nil)
                 guard let submenu else { return }
                 #expect(submenu.items.map(\.title) == connectionTitles)
-                #expect(submenu.items.count == 5)
-                guard submenu.items.count == 5 else { return }
-                #expect(submenu.items[3].isSeparatorItem)
+                #expect(submenu.items.count == 7)
+                guard submenu.items.count == 7 else { return }
+                #expect(submenu.items[2].isSeparatorItem)
+                #expect(submenu.items[5].isSeparatorItem)
 
-                let backendItems = Array(submenu.items.prefix(3))
-                #expect(backendItems.map { $0.representedObject as? String } == [
+                let modeItems = Array(submenu.items.prefix(2))
+                #expect(modeItems.map { $0.representedObject as? String } == [
                     "homeAssistant",
-                    "xiaomiCloud",
                     "demo",
                 ])
-                for item in backendItems {
+                for item in modeItems {
                     #expect(item.target === controller)
                     #expect(item.action == NSSelectorFromString("switchBackendFromStatusMenu:"))
                 }
-                #expect(submenu.items[4].target === controller)
+                for item in submenu.items[3...4] {
+                    #expect(item.isEnabled == false)
+                    #expect(item.action == nil)
+                }
+                #expect(submenu.items[6].target === controller)
                 #expect(
-                    submenu.items[4].action
+                    submenu.items[6].action
                         == NSSelectorFromString("openConnectionSettingsFromStatusMenu:")
                 )
 
@@ -141,39 +145,83 @@ struct MenuBarPanelControllerTests {
         verify(
             language: .zhHans,
             titles: ["家居连接", "设置…", "检查更新…", "", "退出 MenuBarMijia"],
-            connectionTitles: ["Home Assistant", "米家云端直连", "演示模式", "", "打开连接设置…"]
+            connectionTitles: [
+                "实时连接",
+                "演示模式",
+                "",
+                "Home Assistant",
+                "米家云端直连",
+                "",
+                "打开连接设置…",
+            ]
         )
         verify(
             language: .zhHant,
             titles: ["家居連線", "設定…", "檢查更新…", "", "退出 MenuBarMijia"],
-            connectionTitles: ["Home Assistant", "米家雲端直連", "演示模式", "", "開啟連線設定…"]
+            connectionTitles: [
+                "實時連線",
+                "演示模式",
+                "",
+                "Home Assistant",
+                "米家雲端直連",
+                "",
+                "開啟連線設定…",
+            ]
         )
         verify(
             language: .en,
             titles: ["Connections", "Settings…", "Check for Updates…", "", "Quit MenuBarMijia"],
             connectionTitles: [
+                "Live Connections",
+                "Demo Mode",
+                "",
                 "Home Assistant",
                 "Xiaomi Cloud Direct",
-                "Demo Mode",
                 "",
                 "Open Connection Settings…",
             ]
         )
     }
 
-    @Test("Connections submenu checks exactly the current backend")
-    func statusContextMenuChecksCurrentBackend() throws {
-        let cases: [(HomeBackend, [NSControl.StateValue])] = [
-            (.homeAssistant, [.on, .off, .off]),
-            (.xiaomiCloud, [.off, .on, .off]),
-            (.demo, [.off, .off, .on]),
+    @Test("Connections submenu distinguishes live mode from the included live sources")
+    func statusContextMenuReflectsConnectionState() throws {
+        let cases: [(MenuBarPanelController.StatusConnectionMenuState, [NSControl.StateValue])] = [
+            (
+                .init(
+                    homeBackend: .homeAssistant,
+                    hasHASource: true,
+                    hasMiSource: true,
+                    preferredLiveBackend: .homeAssistant
+                ),
+                [.on, .off, .on, .on]
+            ),
+            (
+                .init(
+                    homeBackend: .xiaomiCloud,
+                    hasHASource: false,
+                    hasMiSource: true,
+                    preferredLiveBackend: .xiaomiCloud
+                ),
+                [.on, .off, .off, .on]
+            ),
+            (
+                .init(
+                    homeBackend: .demo,
+                    hasHASource: true,
+                    hasMiSource: true,
+                    preferredLiveBackend: .homeAssistant
+                ),
+                [.off, .on, .off, .off]
+            ),
         ]
         let controller = MenuBarPanelController()
 
-        for (backend, expectedStates) in cases {
-            let menu = controller.makeStatusContextMenu(currentBackend: backend)
+        for (state, expectedStates) in cases {
+            let menu = controller.makeStatusContextMenu(connectionState: state)
             let submenu = try #require(menu.items[0].submenu)
-            #expect(Array(submenu.items.prefix(3)).map(\.state) == expectedStates)
+            let states = [submenu.items[0], submenu.items[1], submenu.items[3], submenu.items[4]]
+                .map(\.state)
+            #expect(states == expectedStates)
         }
     }
 
@@ -183,14 +231,22 @@ struct MenuBarPanelControllerTests {
         var selectedBackends: [HomeBackend] = []
         controller.switchHomeBackend = { selectedBackends.append($0) }
 
-        let submenu = try #require(controller.makeStatusContextMenu().items[0].submenu)
+        let state = MenuBarPanelController.StatusConnectionMenuState(
+            homeBackend: .xiaomiCloud,
+            hasHASource: false,
+            hasMiSource: true,
+            preferredLiveBackend: .xiaomiCloud
+        )
+        let submenu = try #require(
+            controller.makeStatusContextMenu(connectionState: state).items[0].submenu
+        )
         let switchSelector = NSSelectorFromString("switchBackendFromStatusMenu:")
         #expect(controller.responds(to: switchSelector))
         guard controller.responds(to: switchSelector) else { return }
 
-        let backendItems = Array(submenu.items.prefix(3))
-        let expectedBackends: [HomeBackend] = [.homeAssistant, .xiaomiCloud, .demo]
-        for (item, expectedBackend) in zip(backendItems, expectedBackends) {
+        let modeItems = Array(submenu.items.prefix(2))
+        let expectedBackends: [HomeBackend] = [.xiaomiCloud, .demo]
+        for (item, expectedBackend) in zip(modeItems, expectedBackends) {
             _ = controller.perform(switchSelector, with: item)
             #expect(selectedBackends.last == expectedBackend)
         }
@@ -199,7 +255,7 @@ struct MenuBarPanelControllerTests {
             let item = NSMenuItem()
             item.representedObject = malformedPayload
             _ = controller.perform(switchSelector, with: item)
-            #expect(selectedBackends == [.homeAssistant, .xiaomiCloud, .demo])
+            #expect(selectedBackends == [.xiaomiCloud, .demo])
         }
 
         var requestedTabs: [SettingsTab?] = []
@@ -210,7 +266,7 @@ struct MenuBarPanelControllerTests {
         )
         #expect(controller.responds(to: connectionSettingsSelector))
         guard controller.responds(to: connectionSettingsSelector) else { return }
-        _ = controller.perform(connectionSettingsSelector, with: submenu.items[4])
+        _ = controller.perform(connectionSettingsSelector, with: submenu.items[6])
 
         controller.openSettingsFromStatusMenu(nil)
         controller.openUpdatesFromStatusMenu(nil)
@@ -296,6 +352,32 @@ struct MenuBarPanelControllerTests {
 
         #expect(presentedMenuCount == 1)
         #expect(toggleCount == 1)
+    }
+
+    @Test("Native primary hold after menu dismissal cannot reuse the release as a panel click")
+    func nativePrimaryHoldClearsPostMenuClickFallback() {
+        let controller = MenuBarPanelController()
+        var toggleCount = 0
+        var eventNumber: Int? = 100
+        controller.statusItemEventNumber = { eventNumber }
+        controller.statusContextMenuPresenter = { _ in eventNumber = 101 }
+        controller.statusItemToggle = { toggleCount += 1 }
+
+        controller.handleStatusItemEvent(eventType: .rightMouseDown, pressedMouseButtons: 0x2)
+
+        // macOS 26 can accept a native hold without forwarding its primary mouse-down. Model the
+        // timer seeing the release before the button's later mouse-up callback.
+        eventNumber = 102
+        controller.handleStatusItemNativeLongPressEvent(
+            eventType: .leftMouseDown,
+            pressedMouseButtons: 0
+        )
+        #expect(controller.isStatusItemPressActive == false)
+
+        eventNumber = 103
+        controller.handleStatusItemEvent(eventType: .leftMouseUp, pressedMouseButtons: 0)
+
+        #expect(toggleCount == 0)
     }
 
     @Test("Primary status-item click still toggles and native primary hold stays on hold-to-talk path")

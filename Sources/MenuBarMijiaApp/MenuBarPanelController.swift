@@ -193,27 +193,96 @@ final class MenuBarPanelController: NSObject {
 
     // MARK: - Status Item Context Menu
 
+    struct StatusConnectionMenuState {
+        let isDemo: Bool
+        let includesHomeAssistant: Bool
+        let includesXiaomiCloud: Bool
+        let preferredLiveBackend: HomeBackend
+
+        init(
+            homeBackend: HomeBackend,
+            hasHASource: Bool,
+            hasMiSource: Bool,
+            preferredLiveBackend: HomeBackend
+        ) {
+            isDemo = homeBackend == .demo
+            includesHomeAssistant = !isDemo && (
+                hasHASource || (!hasMiSource && homeBackend == .homeAssistant)
+            )
+            includesXiaomiCloud = !isDemo && (
+                hasMiSource || (!hasHASource && homeBackend == .xiaomiCloud)
+            )
+            self.preferredLiveBackend = preferredLiveBackend
+        }
+    }
+
+    private var statusConnectionMenuState: StatusConnectionMenuState {
+        guard let store else {
+            return StatusConnectionMenuState(
+                homeBackend: .homeAssistant,
+                hasHASource: false,
+                hasMiSource: false,
+                preferredLiveBackend: .homeAssistant
+            )
+        }
+        return StatusConnectionMenuState(
+            homeBackend: store.homeBackend,
+            hasHASource: store.hasHASource,
+            hasMiSource: store.hasMiSource,
+            preferredLiveBackend: store.preferredLiveBackend
+        )
+    }
+
     /// Creates a new menu for each presentation so a runtime language change is reflected at once.
-    func makeStatusContextMenu(currentBackend: HomeBackend? = nil) -> NSMenu {
+    func makeStatusContextMenu(connectionState: StatusConnectionMenuState? = nil) -> NSMenu {
         let menu = NSMenu()
-        let selectedBackend = currentBackend ?? store?.homeBackend
+        let state = connectionState ?? statusConnectionMenuState
         let connections = NSMenuItem(
             title: L10n.tr("家居连接", "Connections"),
             action: nil,
             keyEquivalent: ""
         )
         let connectionsMenu = NSMenu()
-        for backend in HomeBackend.allCases {
-            let item = NSMenuItem(
-                title: backend.title,
-                action: #selector(switchBackendFromStatusMenu(_:)),
-                keyEquivalent: ""
-            )
-            item.target = self
-            item.representedObject = backend.rawValue
-            item.state = backend == selectedBackend ? .on : .off
-            connectionsMenu.addItem(item)
-        }
+
+        let liveConnections = NSMenuItem(
+            title: L10n.tr("实时连接", "Live Connections"),
+            action: #selector(switchBackendFromStatusMenu(_:)),
+            keyEquivalent: ""
+        )
+        liveConnections.target = self
+        liveConnections.representedObject = state.preferredLiveBackend.rawValue
+        liveConnections.state = state.isDemo ? .off : .on
+        connectionsMenu.addItem(liveConnections)
+
+        let demo = NSMenuItem(
+            title: HomeBackend.demo.title,
+            action: #selector(switchBackendFromStatusMenu(_:)),
+            keyEquivalent: ""
+        )
+        demo.target = self
+        demo.representedObject = HomeBackend.demo.rawValue
+        demo.state = state.isDemo ? .on : .off
+        connectionsMenu.addItem(demo)
+
+        connectionsMenu.addItem(.separator())
+        let homeAssistant = NSMenuItem(
+            title: HomeBackend.homeAssistant.title,
+            action: nil,
+            keyEquivalent: ""
+        )
+        homeAssistant.state = state.includesHomeAssistant ? .on : .off
+        homeAssistant.isEnabled = false
+        connectionsMenu.addItem(homeAssistant)
+
+        let xiaomiCloud = NSMenuItem(
+            title: HomeBackend.xiaomiCloud.title,
+            action: nil,
+            keyEquivalent: ""
+        )
+        xiaomiCloud.state = state.includesXiaomiCloud ? .on : .off
+        xiaomiCloud.isEnabled = false
+        connectionsMenu.addItem(xiaomiCloud)
+
         connectionsMenu.addItem(.separator())
         let connectionSettings = NSMenuItem(
             title: L10n.tr("打开连接设置…", "Open Connection Settings…"),
@@ -311,7 +380,9 @@ final class MenuBarPanelController: NSObject {
         if let switchHomeBackend {
             switchHomeBackend(backend)
         } else {
-            store?.switchBackend(backend)
+            guard let store else { return }
+            if backend != .demo, store.homeBackend != .demo { return }
+            store.switchBackend(backend)
         }
     }
 
@@ -697,6 +768,7 @@ final class MenuBarPanelController: NSObject {
 
         let now = ProcessInfo.processInfo.systemUptime
         guard now >= suppressReleaseUntil else { return }
+        clearPostMenuPrimaryMouseUp()
         if (pressedMouseButtons & 0x1) != 0 {
             setStatusItemHighlighted(true)
         }

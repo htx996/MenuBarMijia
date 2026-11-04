@@ -2,20 +2,18 @@
 
 ## Intent
 
-Expose the existing home data-source picker from the menu-bar icon's right-click menu so the user
-can see the active backend and switch providers without opening Settings first.
+Expose the current connection mode and live sources in the menu-bar icon's right-click menu. The
+menu lets the user enter or leave the offline demo without opening Settings.
 
 ## User Experience
 
 - Add `家居连接` / `Connections` as the first item in the status-item context menu.
-- Its native AppKit submenu contains, in `HomeBackend.allCases` order:
-  - `Home Assistant`
-  - `米家云端直连` / `Xiaomi Cloud Direct`
-  - `演示模式` / `Demo Mode`
-- The current backend carries the standard macOS checkmark. The other backend items are unchecked.
-- Selecting another backend immediately calls the same `HomeStore.switchBackend(_:)` path used by
-  the Settings segmented picker. That path shuts down the previous provider, replaces it, starts
-  listening, and reconnects. Selecting the already-active backend is a no-op.
+- Its native AppKit submenu contains `实时连接` / `Live Connections` and `演示模式` / `Demo Mode`.
+  The active mode carries the standard macOS checkmark.
+- Read-only `Home Assistant` and `米家云端直连` / `Xiaomi Cloud Direct` rows follow the mode picker.
+  Each included live source carries a checkmark. Both rows are checked when both sources are included.
+- Selecting a mode calls the same `HomeStore.switchBackend(_:)` path used by Settings. Leaving demo
+  mode reconnects every configured live source through `HomeStore.preferredLiveBackend`.
 - A separator and `打开连接设置…` / `Open Connection Settings…` follow the backend choices and open
   the existing Settings window on the Connection tab.
 - Existing `设置…`, `检查更新…`, and `退出 MenuBarMijia` commands remain unchanged below this item.
@@ -28,26 +26,26 @@ can see the active backend and switch providers without opening Settings first.
   routes actions to the existing store API.
 - Credentials, server addresses, account identifiers, and connection errors are not shown in the
   context menu.
-- Switching to an unconfigured Home Assistant or signed-out Xiaomi Cloud backend is allowed, matching
-  the existing Settings picker; the provider reports its normal disconnected state afterward.
+- The menu does not offer exclusive Home Assistant or Xiaomi Cloud switching. ADR-0008 requires the
+  macOS app to connect both configured sources and merge overlapping devices.
 - Connection editing, login, LAN scanning, region selection, and LG webOS configuration remain in
   Settings and are explicitly out of scope.
 
 ## Approaches Considered
 
-1. **Native submenu with immediate switching — selected.** Compact, follows macOS conventions, shows
-   the active backend with a checkmark, and reuses the tested provider-switching path.
-2. **Display-only submenu that opens Settings.** Safer but does not meet the requested quick-switch
-   workflow.
+1. **Mode picker with live-source status.** Selected because it matches ADR-0008, supports the live and
+   demo switch, and shows when one or both live sources are active.
+2. **Exclusive source picker.** Rejected because selecting one source still builds the dual-source
+   provider when both sources are configured.
 3. **Three flat top-level menu items.** Fewer pointer movements, but clutters the small status menu and
    scales poorly as connection actions grow.
 
 ## Verification
 
 - TDD coverage for submenu structure and Simplified Chinese/English titles.
-- Verify exactly one backend is checked for every current backend.
-- Verify each backend command routes to the selected `HomeBackend` and Connection Settings opens the
-  `.connection` tab.
+- Verify exactly one mode is checked and that the source rows match the included provider set.
+- Verify mode commands route to demo or the preferred live backend. Verify that Connection Settings
+  opens the `.connection` tab.
 - Re-run existing Settings, update, quit, right-click suppression, second-click, and menu-position
   regression tests.
 - Build and sign a local arm64 test app for manual verification before any PR is created.
