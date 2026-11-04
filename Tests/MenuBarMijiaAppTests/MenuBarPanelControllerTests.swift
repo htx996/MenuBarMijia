@@ -260,6 +260,8 @@ struct MenuBarPanelControllerTests {
 
         var requestedTabs: [SettingsTab?] = []
         controller.showSettings = { requestedTabs.append($0) }
+        var updateCheckCount = 0
+        controller.performUpdateCheck = { updateCheckCount += 1 }
 
         let connectionSettingsSelector = NSSelectorFromString(
             "openConnectionSettingsFromStatusMenu:"
@@ -271,6 +273,7 @@ struct MenuBarPanelControllerTests {
         controller.openSettingsFromStatusMenu(nil)
         controller.openUpdatesFromStatusMenu(nil)
         #expect(requestedTabs == [.connection, nil, .about])
+        #expect(updateCheckCount == 1, "Check for Updates must run a user-initiated check")
 
         var didRequestTermination = false
         controller.terminateApplication = { didRequestTermination = true }
@@ -397,11 +400,13 @@ struct MenuBarPanelControllerTests {
 
         // The 6 pt hold-tracking tolerance accepts a neighboring item's down, but it must not turn
         // into a panel toggle.
+        eventNumber = 102
         controller.beginHoldDetectionFromMonitor(allowsPostMenuToggle: false)
         controller.handleStatusItemEvent(eventType: .leftMouseUp, pressedMouseButtons: 0)
         #expect(toggleCount == 0)
 
         // The user's actual click on this item still consumes the fallback.
+        eventNumber = 103
         controller.beginHoldDetectionFromMonitor(allowsPostMenuToggle: true)
         controller.handleStatusItemEvent(eventType: .leftMouseUp, pressedMouseButtons: 0)
         #expect(toggleCount == 1)
@@ -492,7 +497,9 @@ struct MenuBarPanelControllerTests {
 
         controller.handleStatusItemEvent(eventType: .rightMouseDown, pressedMouseButtons: 0x2)
 
-        // The synthetic tail still swallows an immediate mouse-up.
+        // The synthetic primary pair has no physical button bit: both halves are rejected and the
+        // fallback stays armed for the host's next mouse-up-only click.
+        controller.handleStatusItemEvent(eventType: .leftMouseDown, pressedMouseButtons: 0)
         controller.handleStatusItemEvent(eventType: .leftMouseUp, pressedMouseButtons: 0)
         #expect(toggleCount == 0)
 

@@ -59,6 +59,8 @@ final class MenuBarPanelController: NSObject {
     var switchHomeBackend: ((HomeBackend) -> Void)?
     /// Injectable so menu-action tests can verify Quit without terminating the test runner.
     var terminateApplication: () -> Void = { NSApplication.shared.terminate(nil) }
+    /// Update route for the status menu; production falls through to the installed store.
+    var performUpdateCheck: (() -> Void)?
     /// Event-boundary seams keep gesture routing testable without creating a process-wide NSApp.
     var statusContextMenuPresenter: ((NSMenu) -> Void)?
     var statusItemToggle: (() -> Void)?
@@ -413,6 +415,13 @@ final class MenuBarPanelController: NSObject {
 
     @objc func openUpdatesFromStatusMenu(_ sender: Any?) {
         showSettings(.about)
+        // This is an explicit check; the About tab's `checkForUpdatesIfNeeded()` skips automatic
+        // checks that are disabled or recent, so do not rely on it.
+        if let performUpdateCheck {
+            performUpdateCheck()
+        } else if let store {
+            Task { await store.checkForUpdates() }
+        }
     }
 
     @objc func quitFromStatusMenu(_ sender: Any?) {
@@ -721,7 +730,6 @@ final class MenuBarPanelController: NSObject {
                 restoreStatusItemHighlight()
                 return
             }
-            clearPostMenuPrimaryMouseUp()
             let now = ProcessInfo.processInfo.systemUptime
             guard !pressTriggered else { return }
             if now < suppressReleaseUntil {
@@ -731,6 +739,9 @@ final class MenuBarPanelController: NSObject {
                 guard (pressedMouseButtons & 0x1) != 0 else { return }
                 suppressReleaseUntil = 0
             }
+            // Only an accepted down consumes the pending post-menu click; a rejected synthetic pair
+            // must leave it armed for the host's next mouse-up-only delivery.
+            clearPostMenuPrimaryMouseUp()
             pressAllowsToggle = true
             setStatusItemHighlighted(true)
             beginPress()
