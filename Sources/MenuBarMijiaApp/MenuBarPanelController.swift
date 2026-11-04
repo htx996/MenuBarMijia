@@ -62,7 +62,25 @@ final class MenuBarPanelController: NSObject {
     /// Event-boundary seams keep gesture routing testable without creating a process-wide NSApp.
     var statusContextMenuPresenter: ((NSMenu) -> Void)?
     var statusItemToggle: (() -> Void)?
-    var statusItemEventNumber: () -> Int? = { NSApplication.shared.currentEvent?.eventNumber }
+    var statusItemEventNumber: () -> Int? = {
+        MenuBarPanelController.statusEventNumber(for: NSApplication.shared.currentEvent)
+    }
+
+    /// Reads the current event's number only when it is a mouse event. `NSEvent.eventNumber` raises
+    /// `NSInternalInconsistencyException` for keyboard events, which reach the status item when the
+    /// context menu is dismissed with Escape or the item is activated by keyboard navigation.
+    static func statusEventNumber(for event: NSEvent?) -> Int? {
+        guard let event else { return nil }
+        switch event.type {
+        case .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
+             .otherMouseDown, .otherMouseUp, .mouseMoved,
+             .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
+             .mouseEntered, .mouseExited:
+            return event.eventNumber
+        default:
+            return nil
+        }
+    }
 
     private weak var store: HomeStore?
     private var labelTimer: Timer?
@@ -785,12 +803,22 @@ final class MenuBarPanelController: NSObject {
         }
     }
 
-    private func beginHoldDetectionFromMonitor() {
+    /// `handleMouseDown` routes a status-item hit here. Internal so gesture tests can exercise the
+    /// monitor path without a live menu-bar window.
+    func beginHoldDetectionFromMonitor() {
         let now = ProcessInfo.processInfo.systemUptime
         guard now >= suppressReleaseUntil, !pressTriggered else { return }
         setStatusItemHighlighted(true)
         if pressTimer == nil {
-            pressAllowsToggle = false
+            // The first physical press after the context menu closed is the click that dismissed it.
+            // Its release must toggle the panel even when the host forwards this down to the monitor
+            // but not to the button, so consume the pending fallback and let the press toggle.
+            if acceptsStandalonePostMenuMouseUp {
+                clearPostMenuPrimaryMouseUp()
+                pressAllowsToggle = true
+            } else {
+                pressAllowsToggle = false
+            }
             pressStartedAt = now
             startPressTimerIfNeeded()
         }

@@ -354,6 +354,82 @@ struct MenuBarPanelControllerTests {
         #expect(toggleCount == 1)
     }
 
+    @Test("Monitor-started first click after menu dismissal toggles despite an early button mouse-up")
+    func monitorStartedPostMenuClickToggles() {
+        let controller = MenuBarPanelController()
+        var toggleCount = 0
+        var eventNumber: Int? = 100
+        controller.statusItemEventNumber = { eventNumber }
+        controller.statusContextMenuPresenter = { _ in eventNumber = 101 }
+        controller.statusItemToggle = { toggleCount += 1 }
+
+        controller.handleStatusItemEvent(eventType: .rightMouseDown, pressedMouseButtons: 0x2)
+        // The dismissal mouse-up itself only closes the menu.
+        controller.handleStatusItemEvent(eventType: .leftMouseUp, pressedMouseButtons: 0)
+        #expect(toggleCount == 0)
+
+        // The host forwards the user's next physical down to the mouse monitor but not to the
+        // button, and its short click ends with a button mouse-up before the 30 ms hold tick.
+        eventNumber = 102
+        controller.beginHoldDetectionFromMonitor()
+        controller.handleStatusItemEvent(eventType: .leftMouseUp, pressedMouseButtons: 0)
+
+        #expect(toggleCount == 1, "the pending post-menu click must not be discarded as a hold")
+        #expect(controller.isStatusItemPressActive == false)
+
+        // Consuming the fallback keeps a later stray mouse-up from toggling a second time.
+        eventNumber = 103
+        controller.handleStatusItemEvent(eventType: .leftMouseUp, pressedMouseButtons: 0)
+        #expect(toggleCount == 1)
+    }
+
+    @Test("Monitor-started press without a pending menu click does not toggle the panel")
+    func monitorStartedPressWithoutPendingClickDoesNotToggle() {
+        let controller = MenuBarPanelController()
+        var toggleCount = 0
+        controller.statusItemEventNumber = { 200 }
+        controller.statusItemToggle = { toggleCount += 1 }
+
+        controller.beginHoldDetectionFromMonitor()
+        #expect(controller.isStatusItemPressActive)
+
+        controller.handleStatusItemEvent(eventType: .leftMouseUp, pressedMouseButtons: 0)
+
+        #expect(toggleCount == 0)
+        #expect(controller.isStatusItemPressActive == false)
+    }
+
+    @Test("Keyboard current events never reach the mouse-only eventNumber accessor")
+    func statusEventNumberRejectsNonMouseEvents() throws {
+        let keyDown = try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            characters: "\u{1b}",
+            charactersIgnoringModifiers: "\u{1b}",
+            isARepeat: false,
+            keyCode: 53
+        ))
+        #expect(MenuBarPanelController.statusEventNumber(for: keyDown) == nil)
+        #expect(MenuBarPanelController.statusEventNumber(for: nil) == nil)
+
+        let mouseUp = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp,
+            location: .zero,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 42,
+            clickCount: 1,
+            pressure: 0
+        ))
+        #expect(MenuBarPanelController.statusEventNumber(for: mouseUp) == 42)
+    }
+
     @Test("Native primary hold after menu dismissal cannot reuse the release as a panel click")
     func nativePrimaryHoldClearsPostMenuClickFallback() {
         let controller = MenuBarPanelController()
