@@ -430,6 +430,32 @@ struct MenuBarPanelControllerTests {
         #expect(MenuBarPanelController.statusEventNumber(for: mouseUp) == 42)
     }
 
+    @Test("Keyboard activation after a mouse-dismissed menu still toggles once the grace ends")
+    func keyboardActivationAfterMenuDismissalToggles() async throws {
+        let controller = MenuBarPanelController()
+        var toggleCount = 0
+        var eventNumber: Int? = 100
+        controller.statusItemEventNumber = { eventNumber }
+        controller.statusContextMenuPresenter = { _ in eventNumber = 101 }
+        controller.statusItemToggle = { toggleCount += 1 }
+
+        controller.handleStatusItemEvent(eventType: .rightMouseDown, pressedMouseButtons: 0x2)
+        controller.handleStatusItemEvent(eventType: .leftMouseUp, pressedMouseButtons: 0)
+
+        // Escape and the synthetic tail of the dismissed menu arrive inside the 0.15 s grace and
+        // must not open the panel.
+        controller.handleStatusItemEvent(eventType: .keyDown, pressedMouseButtons: 0)
+        #expect(toggleCount == 0)
+
+        // A later keyboard activation is a real toggle, not a stale mouse-up fallback.
+        try await Task.sleep(for: .milliseconds(250))
+        controller.handleStatusItemEvent(eventType: .keyDown, pressedMouseButtons: 0)
+        #expect(toggleCount == 1)
+
+        controller.handleStatusItemEvent(eventType: .keyDown, pressedMouseButtons: 0)
+        #expect(toggleCount == 2, "the cleared fallback must not block subsequent keyboard activation")
+    }
+
     @Test("Native primary hold after menu dismissal cannot reuse the release as a panel click")
     func nativePrimaryHoldClearsPostMenuClickFallback() {
         let controller = MenuBarPanelController()

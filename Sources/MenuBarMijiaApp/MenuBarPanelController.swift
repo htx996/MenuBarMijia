@@ -757,9 +757,16 @@ final class MenuBarPanelController: NSObject {
                 }
             }
         default:
+            let now = ProcessInfo.processInfo.systemUptime
+            // Keyboard and accessibility activation never produce the mouse-up this fallback waits
+            // for. Past the dismissal grace, drop the stale fallback so the key still toggles; the
+            // grace window keeps Escape and the menu's own synthetic tail from opening the panel.
+            if acceptsStandalonePostMenuMouseUp, now >= suppressContextMenuUntil {
+                clearPostMenuPrimaryMouseUp()
+            }
             if !acceptsStandalonePostMenuMouseUp,
                !pressTriggered,
-               ProcessInfo.processInfo.systemUptime >= suppressReleaseUntil {
+               now >= suppressReleaseUntil {
                 performStatusItemToggle()
             }
             if pressedMouseButtons == 0 {
