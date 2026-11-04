@@ -369,7 +369,10 @@ final class MenuBarPanelController: NSObject {
         let dismissedAt = ProcessInfo.processInfo.systemUptime
         restoreStatusItemHighlight()
         contextMenuDismissalEventNumber = statusItemEventNumber()
-        acceptsStandalonePostMenuMouseUp = contextMenuDismissalEventNumber != nil
+        // Escape and keyboard activation expose no mouse event number, but the next physical click
+        // can still arrive as a mouse-up only on macOS 26. Arm the fallback either way and keep the
+        // time-based tail for hosts that omit the dismissal event number.
+        acceptsStandalonePostMenuMouseUp = true
         suppressContextMenuUntil = dismissedAt + 0.15
         suppressReleaseUntil = contextMenuDismissalEventNumber == nil
             ? dismissedAt + Self.contextMenuSyntheticClickTail
@@ -749,7 +752,8 @@ final class MenuBarPanelController: NSObject {
             if (pressedMouseButtons & 0x1) == 0 {
                 if isStatusItemPressActive {
                     finishPress()
-                } else if acceptsStandalonePostMenuMouseUp {
+                } else if acceptsStandalonePostMenuMouseUp,
+                          ProcessInfo.processInfo.systemUptime >= suppressReleaseUntil {
                     clearPostMenuPrimaryMouseUp()
                     pressAllowsToggle = false
                     suppressReleaseUntil = ProcessInfo.processInfo.systemUptime + 0.15
@@ -812,7 +816,10 @@ final class MenuBarPanelController: NSObject {
 
     /// `handleMouseDown` routes a status-item hit here. Internal so gesture tests can exercise the
     /// monitor path without a live menu-bar window.
-    func beginHoldDetectionFromMonitor() {
+    ///
+    /// `allowsPostMenuToggle` is true only when the press landed on the button itself; the wider
+    /// hold-tracking tolerance must not consume the pending post-menu click.
+    func beginHoldDetectionFromMonitor(allowsPostMenuToggle: Bool = false) {
         let now = ProcessInfo.processInfo.systemUptime
         guard now >= suppressReleaseUntil, !pressTriggered else { return }
         setStatusItemHighlighted(true)
@@ -820,7 +827,7 @@ final class MenuBarPanelController: NSObject {
             // The first physical press after the context menu closed is the click that dismissed it.
             // Its release must toggle the panel even when the host forwards this down to the monitor
             // but not to the button, so consume the pending fallback and let the press toggle.
-            if acceptsStandalonePostMenuMouseUp {
+            if allowsPostMenuToggle, acceptsStandalonePostMenuMouseUp {
                 clearPostMenuPrimaryMouseUp()
                 pressAllowsToggle = true
             } else {
@@ -1101,7 +1108,11 @@ final class MenuBarPanelController: NSObject {
                 if eventType == .rightMouseDown {
                     showStatusContextMenu()
                 } else if eventType == .leftMouseDown, (pressedMouseButtons & 0x1) != 0 {
-                    beginHoldDetectionFromMonitor()
+                    // The 6 pt tolerance serves hold tracking. A post-menu click must land on the
+                    // button itself, or a neighboring status item could toggle this panel.
+                    beginHoldDetectionFromMonitor(
+                        allowsPostMenuToggle: statusRect.contains(screenPoint)
+                    )
                 }
                 return
             }
